@@ -1,0 +1,250 @@
+name: deploy-lamp-stack
+on:
+  # fork:
+  push:
+    branches:
+      - main
+  # pull_request_target:
+  #   types:
+  #     - opened
+    
+jobs:
+  # test:
+
+
+  get-parameters:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: check out repo for job to access
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            templates
+      - name: set user parameters as outputs
+        id: user-parameters
+        run: echo "user_params=$(jq -c . < ${{ github.workspace }}/templates/parameters.json)" >> $GITHUB_OUTPUT
+        # run: | 
+        #   content=`cat ${{ github.workspace }}/templates/parameters.json`
+        #   # content="${content//'%'/'%25'}"
+        #   # content="${content//$'\n'/'%0A'}"
+        #   # content="${content//$'\r'/'%0D'}"
+        #   echo $content
+        #   echo "USER_PARAMS=$content" >> $GITHUB_OUTPUT
+        # run: |
+        #   echo "USER_PARAMS<<EOFMARKER" >> $GITHUB_ENV
+        #   cat ${{ github.workspace }}/templates/parameters.json >> $GITHUB_ENV
+        #   echo "EOFMARKER" >> $GITHUB_ENV
+      - name: echo variables
+        run: |
+          echo ${{ steps.user-parameters.outputs.user_params }}
+    outputs: 
+      user_parameters: ${{ steps.user-parameters.outputs.user_params }}
+
+
+  build-dependencies:
+    needs: 
+      # - test
+      - get-parameters
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: check out repo for job to access
+        uses: actions/checkout@v4
+        with: 
+          fetch-depth: 2
+          sparse-checkout: |
+            templates
+            templates/main
+            templates/main/nested
+            templates/dependencies
+            .github/actions/dependent-resources
+            .git
+      - name: get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v40
+        with:
+          files_yaml: |
+            dependencies:
+              - templates/parameters.json
+              - templates/dependencies/**
+      - name: configure AWS credentials to perform AWS actions
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+      # - name: print changed files
+      #   run: echo ${{ steps.changed-files.outputs.all_changed_files }}
+      - name: deploy new dependent cloudformation templates
+        if: steps.changed-files.outputs.dependencies_any_changed == 'true'
+        uses: ./.github/actions/dependent-resources
+        with:
+          bucket-name: ${{ fromJSON(needs.get-parameters.outputs.user_parameters).S3BucketName }}
+          stack-name: ${{ fromJSON(needs.get-parameters.outputs.user_parameters).S3StackName }}
+          vpc-stack-name: ${{ fromJSON(needs.get-parameters.outputs.user_parameters).VPCStackName }}
+          lamp-stack-name: ${{ fromJSON(needs.get-parameters.outputs.user_parameters).LAMPStackName }}
+          aws-region: ${{ vars.AWS_REGION }}
+          db-user: ${{ fromJSON(needs.get-parameters.outputs.user_parameters).DBUser }}
+          db-password: ${{ secrets.DBPASSWORD }}
+
+
+  upload-files:
+    needs: 
+      - get-parameters
+      - build-dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: check out repo for job to access
+        uses: actions/checkout@v4
+        with: 
+          fetch-depth: 2
+      - name: get changed directories
+        id: check-directories
+        uses: tj-actions/changed-files@v40
+        with:
+          files_yaml: |
+            preppedFiles:
+              - templates/main/nested/**
+              - lambda/layers/**
+      - name: get changed directories names
+        id: get-directories
+        uses: tj-actions/changed-files@v40
+        with:
+          dir_names: true
+          dir_names_max_depth: 3
+          files_yaml: |
+            functions:
+              - lambda/functions/**
+            server:
+              - src/**
+      - name: configure AWS credentials to perform AWS actions
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: echo changed files
+        run: |
+          echo ${{ steps.check-directories.outputs.preppedFiles_any_changed }}
+          echo ${{ steps.check-directories.outputs.preppedFiles_all_changed_files}}
+          echo ${{ steps.get-directories.outputs.functions_any_changed }}
+          echo ${{ steps.get-directories.outputs.functions_all_changed_files}}
+          echo ${{ steps.get-directories.outputs.server_any_changed }}
+          echo ${{ steps.get-directories.outputs.server_all_changed_files}}
+      - name: update ready files
+        id: updated-files
+        if: steps.check-directories.outputs.preppedFiles_any_changed == 'true'
+        run: |
+          for file in ${{ steps.check-directories.outputs.preppedFiles_all_changed_files }}; do
+            filename=$( echo $file | rev | cut -d "/" -f 1 | rev  )
+            echo $file
+            echo $filename
+            echo "${filename::-4}_version_id=$(aws s3api put-object --bucket ${{ fromJSON(needs.get-parameters.outputs.user_parameters).S3BucketName }} --key $filename --body ${{ github.workspace }}/$file --query VersionId --output text)" >> $GITHUB_OUTPUT
+          done
+      #   run: |
+      #     for file in $(ls -1 ${{ github.workspace }}/lambda/layers); do
+      #       filename=${file::-4}
+      #       git diff --quiet HEAD^..HEAD -- /lambda/layers/${file} || \
+      #         echo "${filename}_version_id=$(aws s3api put-object --bucket ${{ fromJSON(needs.get-parameters.outputs.user_parameters).S3BucketName }} --key ${file} --body ${{ github.workspace }}/lambda/layers/${file} --query VersionId --output text)" >> $GITHUB_OUTPUT
+      #     done
+      - name: update lambda functions
+        id: lambda-functions
+        if: steps.get-directories.outputs.functions_any_changed == 'true'
+        run: |
+          for myDir in ${{ steps.get-directories.outputs.functions_all_changed_files }}; do
+            dirName=$( echo $myDir | rev | cut -d "/" -f 1 | rev  )
+            echo $myDir
+            echo $dirName
+            cd ${{ github.workspace }}/${myDir}
+            zip -r ../${dirName}.zip .
+            echo "${dirName}_version_id=$(aws s3api put-object --bucket ${{ fromJSON(needs.get-parameters.outputs.user_parameters).S3BucketName }} --key ${dirName}.zip --body ../${dirName}.zip --query VersionId --output text)" >> $GITHUB_OUTPUT
+          done
+      - name: update server files
+        id: server-files
+        if: steps.get-directories.outputs.server_any_changed == 'true'
+        run: |
+          tar -czvf server.tar.gz -C ${{ github.workspace }}/src server
+          echo "server_version_id=$(aws s3api put-object --bucket ${{ fromJSON(needs.get-parameters.outputs.user_parameters).S3BucketName }} --key mompopcafe.tar.gz --body server.tar.gz --query VersionId --output text)" >> $GITHUB_OUTPUT
+    outputs:
+      EC2StackURL: https://${{ fromJSON(needs.get-parameters.outputs.user_parameters).S3BucketName }}.s3.${{ vars.AWS_REGION }}.amazonaws.com/lamp_ec2.yml?versionId=${{ steps.updated-files.outputs.lamp_ec2_version_id }}
+      LambdaLayerObjectVersion: ${{ steps.updated-files.outputs.salesLambdaLayer_version_id }}
+      ServerFilesObjectVersion: ${{ steps.server-files.outputs.server_version_id }}
+      SalesDataLambdaObjectVersion: ${{ steps.lambda-functions.outputs.salesAnalysisReportDataExtractor_version_id }}
+      SalesReportLambdaObjectVersion: ${{ steps.lambda-functions.outputs.salesAnalysisReport_version_id }}
+    
+
+  deploy-template:
+    needs:
+      - get-parameters
+      - upload-files
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: check out repo for job to access
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            templates/main
+      - name: configure AWS credentials to perform AWS actions
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: get stack parameters
+        run: |
+          aws cloudformation get-template-summary --template-body file://${{ github.workspace }}/templates/main/lamp_stack.yml --query Parameters[*].ParameterKey --output json > params.json
+          echo "stack_params=$(jq -c . < params.json)" >> $GITHUB_ENV
+
+          for stack in $(aws cloudformation list-stacks --query StackSummaries[*].StackName --output json --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE | sed -r "s/\"/\\\"/g" | jq .[]); do
+            if [[ $stack == *${{ fromJSON(needs.get-parameters.outputs.user_parameters).LAMPStackName }}* ]]; then
+              echo $(aws cloudformation describe-stacks --stack-name ${{ fromJSON(needs.get-parameters.outputs.user_parameters).LAMPStackName }} --query Stacks[0].Parameters[*] --output json) | tr -d '\n' > my_params.json
+              echo "my_params=$(jq -c . < my_params.json)" >> $GITHUB_ENV
+            fi
+          done
+      - name: format parameters for cloudformation deploy
+        id: format-params
+        shell: python
+        env:
+          my_outputs: ${{ toJSON(needs.upload-files.outputs) }}
+          user_params: ${{ needs.get-parameters.outputs.user_parameters }}
+          DBPassword: ${{ secrets.DBPASSWORD }}
+        run: |
+          import json
+          import os
+
+          output_vals = json.loads(os.environ["my_outputs"])
+          user_vals = json.loads(os.environ["user_params"])
+          old_vals = json.loads(os.environ.get("my_params", {}))
+          print(old_vals)
+          old_vals = {} if not old_vals else {o["ParameterKey"]: o["ParameterValue"] for o in old_vals}
+          print(old_vals)
+          my_vals = {}
+
+          for param in json.loads(os.environ["stack_params"]):
+            for val in [output_vals.get(param), user_vals.get(param), os.environ.get(param)]:
+              if val and val[-1] != "=":
+                my_vals[param] = val
+                break
+            if not my_vals.get(param):
+              if param in old_vals and old_vals[param] != "****":
+                my_vals[param] = old_vals[param]
+          
+          vals = ",".join([f"{k}=\"{v}\"" for k,v in my_vals.items()])
+          print(vals)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+            print(f"param_vals={vals}", file=fh)
+      - name: deploy new cloudformation templates
+        uses: aws-actions/aws-cloudformation-github-deploy@v1
+        with:
+          name: ${{ fromJSON(needs.get-parameters.outputs.user_parameters).LAMPStackName }}
+          template: templates/main/lamp_stack.yml
+          parameter-overrides: ${{ steps.format-params.outputs.param_vals }}
+          capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND

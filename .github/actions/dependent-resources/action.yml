@@ -1,0 +1,126 @@
+name: deploy-resources
+description: deploy required VPC and S3 for LAMP template
+
+inputs:
+  bucket-name:
+    description: S3 Bucket Name
+    required: true
+  stack-name:
+    description: S3 Stack Name
+    required: true
+  vpc-stack-name:
+    description: VPC Stack Name
+    required: true
+  lamp-stack-name:
+    description: LAMP Stack Name
+    required: true
+  aws-region:
+    description: AWS region to deploy at 
+    required: true
+  db-user:
+    description: Username for MySQL user
+  db-password:
+    description: Password for MySQL user
+
+runs:
+  using: "composite"
+  steps:
+    - name: prep files
+      shell: bash
+      run: |
+        cp ${{ github.workspace }}/templates/main/nested/lamp_ec2.yml my_lamp_ec2.yml
+        cp ${{ github.workspace }}/templates/main/lamp_stack.yml my_lamp_stack.yml
+    - name: replace dependent import values
+      id: output-values
+      shell: bash
+      run: |
+        for stack in $(aws cloudformation list-stacks --query StackSummaries[*].StackName --output json --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE | sed -r "s/\"/\\\"/g" | jq .[]); do
+          if [[ $stack == *${{ inputs.stack-name }}* ]]; then
+
+            readarray -t stack_outputs < <(aws cloudformation describe-stacks --stack-name ${{ inputs.stack-name }} --query Stacks[0].Outputs --output json | sed -r "s/\"/'/g" | sed -r "s/\{/\\\"\{/g" | sed -r "s/\}/\}\\\"/g" | tr -d '\n' | jq .[])
+            for output in "${stack_outputs[@]}"; do
+
+              key=$(echo $output | sed -r "s/\"//g" | sed -r "s/'/\\\"/g" | jq .OutputKey | tr -d '"')
+              val=$(echo $output | sed -r "s/\"//g" | sed -r "s/'/\\\"/g" | jq .OutputValue | tr -d '"')
+              sed -i "s/\!Sub \${S3StackName}-$key/$val/g" my_lamp_ec2.yml
+              sed -i "s/\!Sub \${S3StackName}-$key/$val/g" my_lamp_stack.yml
+
+              if [[ $key == S3BucketName ]]; then
+                echo "bucket=$val" >> $GITHUB_ENV
+              fi
+            done
+            
+          elif [[ $stack == *${{ inputs.vpc-stack-name }}* ]]; then
+            readarray -t stack_outputs < <(aws cloudformation describe-stacks --stack-name ${{ inputs.vpc-stack-name }} --query Stacks[0].Outputs --output json | sed -r "s/\"/'/g" | sed -r "s/\{/\\\"\{/g" | sed -r "s/\}/\}\\\"/g" | tr -d '\n' | jq .[])
+            for output in "${stack_outputs[@]}"; do
+
+              key=$(echo $output | sed -r "s/\"//g" | sed -r "s/'/\\\"/g" | jq .OutputKey | tr -d '"')
+              val=$(echo $output | sed -r "s/\"//g" | sed -r "s/'/\\\"/g" | jq .OutputValue | tr -d '"')
+              sed -i "s/\!Sub \${VPCStackName}-$key/$val/g" my_lamp_ec2.yml
+              sed -i "s/\!Sub \${VPCStackName}-$key/$val/g" my_lamp_stack.yml
+            done
+            
+          elif [[ $stack == *${{ inputs.lamp-stack-name }}* ]]; then
+            echo "main_deployed=yes" >> $GITHUB_ENV
+            echo $(aws cloudformation describe-stacks --stack-name ${{ inputs.lamp-stack-name }} --query Stacks[0].Parameters[*] --output json) | tr -d '\n' > my_params.json
+            echo "my_params=$(jq -c . < my_params.json)" >> $GITHUB_ENV
+          fi
+        done
+
+        sed -i -e "s/\Fn::ImportValue://g" my_lamp_ec2.yml
+        sed -i -e "s/\Fn::ImportValue://g" my_lamp_stack.yml
+    - name: upload changed ec2
+      if: env.main_deployed == 'yes'
+      id: ec2-value
+      shell: bash
+      run: echo "ver_id=$(aws s3api put-object --bucket ${{ env.bucket }} --key my_lamp_ec2.yml --body my_lamp_ec2.yml --query VersionId --output text)" >> $GITHUB_ENV
+    - name: edit parameters
+      id: edit-params
+      if: env.main_deployed == 'yes'
+      shell: python
+      env: 
+        region: ${{ inputs.aws-region }}
+        username: ${{ inputs.db-user }}
+        password: ${{ inputs.db-password }}
+      run: |
+        import os
+        import json
+
+        old_vals = json.loads(os.environ["my_params"])
+        my_vals = {}
+        for param in old_vals:
+          if param["ParameterKey"] not in ["DBUser", "DBPassword", "EC2StackURL"]:
+            my_vals[param["ParameterKey"]] = param["ParameterValue"]
+
+        if os.environ.get("username"):
+          my_vals["DBUser"] = os.environ["username"]
+        if os.environ.get("password"):
+          my_vals["DBPassword"] = os.environ["password"]
+        
+        my_vals["EC2StackURL"] = f"https://{os.environ['bucket']}.s3.{os.environ['region']}.amazonaws.com/my_lamp_ec2.yml?versionId={os.environ['ver_id']}"
+        vals = ",".join([f"{k}=\"{v}\"" for k,v in my_vals.items()])
+        print(vals)
+        with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+          print(f"param_vals={vals}", file=fh)
+
+    - name: deploy temporary stack
+      if: env.main_deployed == 'yes'
+      uses: aws-actions/aws-cloudformation-github-deploy@v1
+      with:
+        name: ${{ inputs.lamp-stack-name }}
+        template: my_lamp_stack.yml
+        parameter-overrides: ${{ steps.edit-params.outputs.param_vals }}
+        capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+    - name: deploy new s3 template
+      uses: aws-actions/aws-cloudformation-github-deploy@v1
+      with:
+        name: ${{ inputs.stack-name }}
+        template: ${{ github.workspace }}/templates/dependencies/s3.yml
+        parameter-overrides: "BucketName=${{ inputs.bucket-name }}"
+        no-fail-on-empty-changeset: 1
+    - name: deploy new vpc template
+      uses: aws-actions/aws-cloudformation-github-deploy@v1
+      with:
+        name: ${{ inputs.vpc-stack-name }}
+        template: ${{ github.workspace }}/templates/dependencies/vpc.yml
+        no-fail-on-empty-changeset: 1
