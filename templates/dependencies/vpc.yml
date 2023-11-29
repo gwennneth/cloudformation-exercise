@@ -15,6 +15,7 @@ Mappings:
 Resources:
   VPC:
     Type: AWS::EC2::VPC
+    UpdateReplacePolicy: Retain
     Properties:
       CidrBlock: !FindInMap ['SubnetConfig', 'VPC', 'CIDR']
       Tags: 
@@ -23,6 +24,7 @@ Resources:
 
   PublicSubnet:
     Type: AWS::EC2::Subnet
+    UpdateReplacePolicy: Retain
     Properties:
       AvailabilityZone:
          Fn::Select:
@@ -36,6 +38,7 @@ Resources:
 
   PrivateSubnet:
     Type: AWS::EC2::Subnet
+    UpdateReplacePolicy: Retain
     Properties:
       AvailabilityZone:
          Fn::Select:

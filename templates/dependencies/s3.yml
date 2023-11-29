@@ -16,6 +16,7 @@ Parameters:
 Resources:
   S3Bucket:
     Type: AWS::S3::Bucket
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: #!If
         # - BucketNameGiven
