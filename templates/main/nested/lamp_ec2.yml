@@ -129,6 +129,13 @@ Resources:
               - Effect: Allow
                 Action: 'ssm:Get*'
                 Resource: '*'
+        - PolicyName: allow-cloudformation-actions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 'cloudformation:*'
+                Resource: '*'
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile 
