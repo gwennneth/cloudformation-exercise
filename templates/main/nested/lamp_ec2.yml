@@ -136,6 +136,13 @@ Resources:
               - Effect: Allow
                 Action: 'cloudformation:*'
                 Resource: '*'
+        # - PolicyName: allow-ec2-actions
+        #   PolicyDocument:
+        #     Version: "2012-10-17"
+        #     Statement:
+        #       - Effect: Allow
+        #         Action: 'ec2:*'
+        #         Resource: '*'
 
   EC2InstanceProfile:
     Type: AWS::IAM::InstanceProfile 
