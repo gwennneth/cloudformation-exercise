@@ -14,4 +14,4 @@ Things to note:
 
 Things not working:
 - cfn-hup not currently working :(
-- um i actually dk y i hv to allow 0.0.0.0/0 on the MySQL port for the EC2 security group for the apache application to connect to the database lol (tried restricting access to only the security group itself, or the VPC's CIDR n boTh diDnt woRk?!?!? i dun gedDit :)) (like i get that it's not calling localhost but it's own public ip for the database, so the request is going to idk whr b4 resolving to send back to itself, buT y wLdnt iT's own souRce woRk xia whAt)
+- um i actually dk y i hv to allow 0.0.0.0/0 on the MySQL port for the EC2 security group for the apache application to connect to the database lol (tried restricting access to only the security group itself, or the VPC's CIDR n boTh diDnt woRk?!?!? i dun gedDit :)) (like i get that it's not calling localhost but it's own public ip for the database, so the request is going to idk whr b4 resolving to send back to itself, buT y wLdnt iTs own souRce woRk xia whAt)
