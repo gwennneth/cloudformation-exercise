@@ -1,9 +1,9 @@
 name: deploy-lamp-stack
 on:
   # fork:
-  push:
-    branches:
-      - main
+  # push:
+  #   branches:
+  #     - main
   # pull_request_target:
   #   types:
   #     - opened
@@ -222,7 +222,7 @@ jobs:
 
           output_vals = json.loads(os.environ["my_outputs"])
           user_vals = json.loads(os.environ["user_params"])
-          old_vals = json.loads(os.environ.get("my_params", {}))
+          old_vals = json.loads(os.environ.get("my_params", "{}"))
           print(old_vals)
           old_vals = {} if not old_vals else {o["ParameterKey"]: o["ParameterValue"] for o in old_vals}
           print(old_vals)
