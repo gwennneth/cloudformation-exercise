@@ -18,3 +18,6 @@ Things not fixed:
 - ^ it's detecting the change, but the action that's supp to run is exiting with code 1
 - ^ running the cfn-init action command manually just keeps running man and never exits iDk whAt is haPpEning!
 - um i actually dk y i hv to allow 0.0.0.0/0 on the MySQL port for the EC2 security group for the apache application to connect to the database lol (tried restricting access to only the security group itself, or the VPC's CIDR n boTh diDnt woRk?!?!? i dun gedDit :)) (like i get that it's not calling localhost but it's own public ip for the database, so the request is going to idk whr b4 resolving to send back to itself, buT y wLdnt iTs own souRce woRk xia whAt)
+
+Things not done:
+- oh i just realised i hvnt do things like cfn-lint for the templates and pylint for the lambda functions yet ok not that impt yEs
