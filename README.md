@@ -11,6 +11,7 @@ Things to note:
 - Can set DBPASSWORD in repository secret
 - Once the LAMP stack is created on the CloudFormation console, cancel the workflow run to save on Github Actions minutes instead of waiting for the stack to complete
 - Since the workflow is run based on changes made to the files, to redeploy the whole LAMP stack (eg. after deleting it), remove the /src, /lambda, and /templates folder from the repository, push the changes, then add the folders back again
+- Again since it's run on changes, pushing ^ those folders on the first commit won't work either oops
 - Disable EventBridge rule if you don't want to receive emails anymore (default is set to every 2 minutes)
 
 Things not fixed:
