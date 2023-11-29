@@ -12,6 +12,6 @@ Things to note:
 - Once the LAMP stack is created on the CloudFormation console, cancel the workflow run to save on Github Actions minutes
 - Since the workflow is run based on changes made to the files, to redeploy the whole LAMP stack, remove the /src, /lambda, and /templates folder from the repository, push the changes, then add the folders back again
 
-Things not working:
-- cfn-hup not currently working :(
+Things not fixed:
+- CFN-HUP NOT WORKING :( so i cant update any files on the EC2 instance :(
 - um i actually dk y i hv to allow 0.0.0.0/0 on the MySQL port for the EC2 security group for the apache application to connect to the database lol (tried restricting access to only the security group itself, or the VPC's CIDR n boTh diDnt woRk?!?!? i dun gedDit :)) (like i get that it's not calling localhost but it's own public ip for the database, so the request is going to idk whr b4 resolving to send back to itself, buT y wLdnt iTs own souRce woRk xia whAt)

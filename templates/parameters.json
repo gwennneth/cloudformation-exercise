@@ -1,8 +1,0 @@
-{
-    "S3BucketName": "versioned-bucket-for-lamp-stack",
-    "S3StackName": "s3-stack",
-    "VPCStackName": "vpc-stack",
-    "LAMPStackName": "lamp-stack",
-    "SNSEmail": "pshiqi01@gmail.com",
-    "DBUser": "myUser"
-}
