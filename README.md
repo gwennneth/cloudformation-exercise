@@ -14,12 +14,9 @@ Things to note:
 - Again since it's run on changes, pushing ^ those folders on the first commit won't work either oops
 - Disable EventBridge rule if you don't want to receive emails anymore (default is set to every 2 minutes)
 
-Things not fixed:
-- cfn-hup not working :( so i cant update any files on the EC2 instance :(((((
-- ^ it's detecting the change, but the action that's supp to run is exiting with code 1
-- ^ running the cfn-init action command manually just keeps running man and never exits iDk whAt is haPpEning!
-- um i actually dk y i hv to allow 0.0.0.0/0 on the MySQL port for the EC2 security group for the apache application to connect to the database lol (tried restricting access to only the security group itself, or the VPC's CIDR n boTh diDnt woRk?!?!? i dun gedDit :)) (like i get that it's not calling localhost but it's own public ip for the database, so the request is going to idk whr b4 resolving to send back to itself, buT y wLdnt iTs own souRce woRk xia whAt)
-- ^ oh i can enaBLe vpc fLow logs to see ok anth dAy HAHA
+Things fixed:
+- have to allow 0.0.0.0/0 on port 3306 for EC2 because MariaDB is running on EC2, and the SSM Parameter stores the public IP of the EC2 so the server files is connecting to itself by going out of the internet gateway and back in again, using its public IP, so either allow 0.0.0.0/0 or change the SSM Parameter to 'localhost' (more secure lol)
+- removed the installation of aws cli 2 in EC2 cfn-init so that cfn-hup works
 
 Things not done:
 - gave IAM roles god privileges basically ooPs
