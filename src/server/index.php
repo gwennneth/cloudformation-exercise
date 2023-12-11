@@ -10,7 +10,7 @@
 
 	<div id="header" class="mainHeader">
 		<hr>
-		<div class="center">Hello from Mom &amp; Pop Caf&eacute;</div>
+		<div class="center">Mom &amp; Pop Caf&eacute;</div>
 	</div>
 	<br>
 	<?php
