@@ -1,0 +1,414 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates an EC2 instance with LAMP stack and SSM Parameters with MYSQL database credentials
+
+Parameters:
+  VPCStackName:
+    Type: String
+    Description: Stack name of VPC cloudformation template
+  S3StackName:
+    Type: String
+    Description: Stack name of S3 cloudformation template
+  ServerVersionId:
+    Type: String
+    Description: Version id of server tar file S3 object
+  SqlCreateTableVersionId:
+    Type: String
+    Description: Version id of sql create table file S3 object
+  SqlInsertValuesVersionId:
+    Type: String
+    Description: Version id of sql insert values file S3 object
+  LatestAmiId: 
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Description: SSM Parameter of EC2 AMI
+  DBUser:
+    Type: String
+    NoEcho: 'true'
+    Description: Username for MySQL user
+  DBPassword:
+    Type: String
+    NoEcho: 'true'
+    Description: Password for MySQL user
+
+
+Resources:
+  DBUserParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Description: Username for MySQL database access
+      Name: /mompopcafe/dbUser
+      Type: String
+      Value: !Ref DBUser
+
+  DBPasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Description: Password for MySQL user
+      Name: /mompopcafe/dbPassword
+      Type: String
+      Value: !Ref DBPassword
+  
+  DBRootPasswordParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Description: Password for MySQL user
+      Name: /mompopcafe/dbRootPassword
+      Type: String
+      Value: re:St@rt!9
+  
+  DBNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Description: MYSQL database name
+      Name: /mompopcafe/dbName
+      Type: String
+      Value: mom_pop_db
+
+
+  SalesSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: MomPopCafeSecurityGroup
+      GroupDescription: Enable HTTP, SSH, and MySQL access
+      VpcId: 
+        Fn::ImportValue:
+          !Sub ${VPCStackName}-VPCId
+
+  SalesSecurityGroupIngress1:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt SalesSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      CidrIp: 0.0.0.0/0
+      # SourceSecurityGroupId: !GetAtt SalesSecurityGroup.GroupId
+  
+  SalesSecurityGroupIngress2:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt SalesSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: 0.0.0.0/0
+
+  SalesSecurityGroupIngress3:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !GetAtt SalesSecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: 0.0.0.0/0
+
+
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      RoleName: MomPopServerRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies: 
+        - PolicyName: allow-s3-get
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 's3:Get*'
+                Resource: !Join 
+                  - '/'
+                  - 
+                    - Fn::ImportValue:
+                        !Sub ${S3StackName}-S3BucketArn
+                    - '*'
+        - PolicyName: allow-ssm-get
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 'ssm:Get*'
+                Resource: '*'
+        - PolicyName: allow-cloudformation-actions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 'cloudformation:*'
+                Resource: '*'
+        # - PolicyName: allow-ec2-actions
+        #   PolicyDocument:
+        #     Version: "2012-10-17"
+        #     Statement:
+        #       - Effect: Allow
+        #         Action: 'ec2:*'
+        #         Resource: '*'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile 
+    Properties:
+      InstanceProfileName: MomPopInstanceProfile
+      Roles: 
+        - !Ref EC2InstanceRole
+
+  EC2KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: myKey
+
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.micro
+      NetworkInterfaces: 
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          GroupSet: 
+            - !GetAtt SalesSecurityGroup.GroupId
+          SubnetId: 
+            Fn::ImportValue:
+              !Sub ${VPCStackName}-PublicSubnetId
+      KeyName: !Ref EC2KeyPair
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      Tags:
+        - Key: Name
+          Value: MomPopCafeInstance
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -ex
+            yum update -y
+            yum install -y aws-cfn-bootstrap
+            # Call cfn-init script to install files and packages
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region} -c LAMP
+            # Call cfn-signal script to send a signal with exit code
+            /opt/aws/bin/cfn-signal --exit-code $? --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region}
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT1H
+    Metadata:
+      AWS::CloudFormation::Init: 
+        configSets:
+          LAMP:
+            - initialSetup
+            - setupServer
+            - setupDb
+            - startServer
+        initialSetup:
+          packages:
+            yum:
+              mariadb: []
+              mariadb-server: []
+              mariadb-libs: []
+              httpd: []
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+              mode: "000400"
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.EC2Instance.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2Instance --region ${AWS::Region} -c LAMP
+                runas=root
+              mode: "000400"
+              owner: root
+              group: root
+            # /lib/systemd/system/cfn-hup.service:
+            #   content: |
+            #     [Unit]
+            #     Description=cfn-hup
+            #     [Service]
+            #     Type=oneshot
+            #     ExecStart=/usr/local/bin/cfn-hup -c /etc/cfn --no-daemon
+            #     [Install]
+            #     WantedBy=multi-user.target
+            #   mode: '000400'
+            #   owner: root
+            #   group: root
+            # /lib/systemd/system/cfn-hup.timer:
+            #   content: |
+            #     [Unit]
+            #     Description=Run cfn-hup every minute
+            #     [Timer]
+            #     OnCalendar=*-*-* *:*:00
+            #     [Install]
+            #     WantedBy=timers.target
+            #   mode: '000400'
+            #   owner: root
+            #   group: root
+          commands:
+            01_addToGroup:
+              command: sudo usermod -a -G apache ec2-user && groups ec2-user
+            01_changePermissions:
+              command: sudo chown -R ec2-user:apache /var/www && sudo chmod 2775 /var/www 
+            01_changePermissions2:
+              command: find /var/www -type d -exec sudo chmod 2775 {} \;
+            01_changePermissions3:
+              command: find /var/www -type f -exec sudo chmod 0664 {} \;
+            # 02_installAWSCLI2:
+            #   cwd: "~" 
+            #   command: yum -y remove awscli && curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install
+            #   test: "[[ $(echo $(aws --version) | head -c9) = 'aws-cli/1' ]] && test $? -eq 0 && exit 0"
+            # 02_addToPath:
+            #   command: PATH="$PATH:/usr/local/bin"
+            03_installphp:
+              command: yum install -y amazon-linux-extras && amazon-linux-extras install php8.0
+            03_installphpdependency:
+              command: yum install -y php-mbstring
+              test: "[[ $(echo $(php -v) | head -c5) = 'PHP 8' ]] && test $? -eq 0 && exit 0"
+            # 04_startphpservices:
+            #   command: systemctl enable php-fpm
+            #   test: "[[ $(echo $(php -v) | head -c5) = 'PHP 8' ]] && test $? -eq 0 && exit 0"
+            # 04enable_cfn_hup:
+            #   command: systemctl daemon-reload && systemctl enable --now cfn-hup.timer
+          services:
+            sysvinit:
+              mariadb:
+                enabled: "true"
+                ensureRunning: "true"
+                packages:
+                  - mariadb
+        setupServer:
+          files:
+            /var/www/html/.htaccess:
+              content: DirectoryIndex index.php
+              mode: "000755"
+              owner: apache
+              group: apache
+          commands:
+            01_downloadServerFiles:
+              command: !Sub 
+                - 'mkdir /myServerFiles && aws s3api get-object --bucket ${bucketName} --key mompopcafe.tar.gz --version-id ${versionId} /myServerFiles/mompopcafe.tar.gz'
+                - bucketName: 
+                    Fn::ImportValue:
+                      !Sub ${S3StackName}-S3BucketName
+                  versionId: !Ref ServerVersionId
+            02_extractServerFiles:
+              cwd: /myServerFiles
+              command: tar xvzf mompopcafe.tar.gz && rm -rf /var/www/html/* && cp -a ./server/. /var/www/html/ && cd .. && rm -r /myServerFiles
+        setupDb:
+          files:
+            /sqlFiles/create-user.sql:
+              content: !Sub 
+                - |
+                  CREATE USER '${userName}'@'%' IDENTIFIED BY '${userPassword}';
+                  GRANT ALL PRIVILEGES ON *.* TO '${userName}'@'%'
+                  WITH GRANT OPTION;
+                - userName: !GetAtt DBUserParameter.Value
+                  userPassword: !GetAtt DBPasswordParameter.Value
+              mode: "000400"
+              owner: root
+              group: root
+            # /sqlFiles/update-root.sql:
+            #   content: !Sub 
+            #     - |            
+            #       USE mysql;
+            #       UPDATE user SET password=PASSWORD("${userPassword}") WHERE user='root';
+            #       FLUSH PRIVILEGES;
+            #     - userPassword: !GetAtt DBPasswordParameter.Value
+            #   mode: "000400"
+            #   owner: root
+            #   group: root
+          commands:
+            # 01_editDbConfig:
+            #   command: echo "skip-grant-tables" >> /etc/my.cnf
+            01_runDb:
+              command: systemctl start mariadb
+              test: "[[ $(systemctl is-active mariadb) = active ]] && test $? -eq 1 && exit 0"
+            02_setRootPassword:
+              # cwd: /sqlFiles
+              # command: sudo mysql < update-root.sql
+              command: !Sub
+                - mysqladmin -u root password ${userPassword}
+                - userPassword: !Join
+                  - '\!'
+                  - !Split
+                    - '!'
+                    - !GetAtt DBRootPasswordParameter.Value
+              test: mysql -u root -e"quit"
+            # 03_removeDbConfig:
+            #   command: sed -i '$d' /etc/my.cnf
+            # 03_restartDb:
+            #   command: systemctl restart mariadb
+            #   test: "[[ $(systemctl is-active mariadb) = active ]]; (( $? != 0 ))"
+            03_downloadSqlFiles:
+              cwd: /sqlFiles
+              command: !Sub 
+                - 'rm -f create-db.sql && rm -f insert-values.sql && aws s3api get-object --bucket ${bucketName} --key create_db.sql --version-id ${createVersionId} ./create-db.sql && aws s3api get-object --bucket ${bucketName} --key insert_values.sql --version-id ${insertVersionId} ./insert-values.sql'
+                - bucketName: 
+                    Fn::ImportValue:
+                      !Sub ${S3StackName}-S3BucketName
+                  createVersionId: !Ref SqlCreateTableVersionId
+                  insertVersionId: !Ref SqlInsertValuesVersionId
+            03_setupSqlFiles:
+              cwd: /sqlFiles
+              command: !Sub
+                - sed -i 's/PLACEHOLDER_DATABASE_NAME/${databaseName}/g' create-db.sql && sed -i 's/PLACEHOLDER_DATABASE_NAME/${databaseName}/g' insert-values.sql
+                - databaseName: !GetAtt DBNameParameter.Value
+            04_createTablesAndUser:
+              cwd: /sqlFiles
+              command: !Sub 
+                - mysql -u root -p${userPassword} < create-db.sql && mysql -u root -p${userPassword} < insert-values.sql && mysql -u root -p${userPassword} < create-user.sql
+                - userPassword: !Join
+                  - '\!'
+                  - !Split
+                    - '!'
+                    - !GetAtt DBRootPasswordParameter.Value
+              test: !Sub
+                - mysql -u root -p${userPassword} -e"quit"
+                - userPassword: !Join
+                  - '\!'
+                  - !Split
+                    - '!'
+                    - !GetAtt DBRootPasswordParameter.Value
+        startServer:
+          services:
+            sysvinit:
+              httpd:
+                enabled: "true"
+                ensureRunning: "true"
+                sources:
+                  - /var/www/html
+                packages:
+                  - httpd
+              cfn-hup:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+
+  DBUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Description: MYSQL endpoint
+      Name: /mompopcafe/dbUrl
+      Type: String
+      Value: !GetAtt EC2Instance.PublicIp
+
+
+Outputs:
+  SalesSecurityGroupId:
+    Description: Group Id of security group attached to EC2 instance
+    Value: !GetAtt SalesSecurityGroup.GroupId
+
+
+
+        
