@@ -257,7 +257,7 @@ Resources:
             01_changePermissions3:
               command: find /var/www -type f -exec sudo chmod 0664 {} \;
             02_installAWSCLI2:
-              cwd: "~"
+              cwd: "~" 
               command: yum -y remove awscli && curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install
               test: "[[ $(echo $(aws --version) | head -c1-9) = 'aws-cli/1' ]] && test $? -eq 0 && exit 0"
             02_addToPath:
