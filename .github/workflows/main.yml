@@ -113,6 +113,7 @@ jobs:
             preppedFiles:
               - templates/main/nested/**
               - lambda/layers/**
+              - src/sql/**
       - name: get changed directories names
         id: get-directories
         uses: tj-actions/changed-files@v40
@@ -123,7 +124,7 @@ jobs:
             functions:
               - lambda/functions/**
             server:
-              - src/**
+              - src/server/**
       - name: configure AWS credentials to perform AWS actions
         uses: aws-actions/configure-aws-credentials@v4
         with:
