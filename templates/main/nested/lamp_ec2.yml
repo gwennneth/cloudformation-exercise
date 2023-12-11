@@ -259,8 +259,9 @@ Resources:
             02_installAWSCLI2:
               cwd: "~"
               command: yum -y remove awscli && curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install
+              test: "[[ $(echo $(aws --version) | head -c1-9) = 'aws-cli/1' ]] && test $? -eq 0 && exit 0"
             02_addToPath:
-              command: echo PATH="$PATH:/usr/local/bin" >> /etc/profile
+              command: PATH="$PATH:/usr/local/bin"
             03_installphp:
               command: yum install -y amazon-linux-extras && amazon-linux-extras install php8.0
             03_installphpdependency:
