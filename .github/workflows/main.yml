@@ -176,6 +176,8 @@ jobs:
       EC2StackURL: https://${{ fromJSON(needs.get-parameters.outputs.user_parameters).S3BucketName }}.s3.${{ vars.AWS_REGION }}.amazonaws.com/lamp_ec2.yml?versionId=${{ steps.updated-files.outputs.lamp_ec2_version_id }}
       LambdaLayerObjectVersion: ${{ steps.updated-files.outputs.salesLambdaLayer_version_id }}
       ServerFilesObjectVersion: ${{ steps.server-files.outputs.server_version_id }}
+      SqlCreateFileObjectVersion: ${{ steps.server-files.outputs.create_db_version_id }}
+      SqlInsertFileObjectVersion: ${{ steps.server-files.outputs.insert_values_version_id }}
       SalesDataLambdaObjectVersion: ${{ steps.lambda-functions.outputs.salesAnalysisReportDataExtractor_version_id }}
       SalesReportLambdaObjectVersion: ${{ steps.lambda-functions.outputs.salesAnalysisReport_version_id }}
     
