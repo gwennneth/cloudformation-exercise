@@ -308,7 +308,8 @@ Resources:
             /sqlFiles/create-user.sql:
               content: !Sub 
                 # - |
-                #   CREATE USER '${userName}'@'%' IDENTIFIED BY '${userPassword}';
+                #   CREATE USER IF NOT EXISTS '${userName}'@'%';
+                #   SET PASSWORD '${userName}'@'%' = '${userPassword}';
                 #   GRANT ALL PRIVILEGES ON *.* TO '${userName}'@'%'
                 #   WITH GRANT OPTION;
                 - GRANT ALL PRIVILEGES ON *.* TO '${userName}'@'%' IDENTIFIED BY '${userPassword}' WITH GRANT OPTION;
