@@ -308,7 +308,7 @@ Resources:
             /sqlFiles/create-user.sql:
               content: !Sub 
                 - |
-                  CREATE USER '${userName}'@'%' IDENTIFIED BY '${userPassword}';
+                  CREATE USER IF NOT EXISTS '${userName}'@'%' IDENTIFIED BY '${userPassword}';
                   GRANT ALL PRIVILEGES ON *.* TO '${userName}'@'%'
                   WITH GRANT OPTION;
                 - userName: !GetAtt DBUserParameter.Value
