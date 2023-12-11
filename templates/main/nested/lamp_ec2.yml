@@ -307,10 +307,11 @@ Resources:
           files:
             /sqlFiles/create-user.sql:
               content: !Sub 
-                - |
-                  CREATE USER IF NOT EXISTS '${userName}'@'%' IDENTIFIED BY '${userPassword}';
-                  GRANT ALL PRIVILEGES ON *.* TO '${userName}'@'%'
-                  WITH GRANT OPTION;
+                # - |
+                #   CREATE USER '${userName}'@'%' IDENTIFIED BY '${userPassword}';
+                #   GRANT ALL PRIVILEGES ON *.* TO '${userName}'@'%'
+                #   WITH GRANT OPTION;
+                - GRANT ALL PRIVILEGES ON *.* TO '${userName}'@'%' IDENTIFIED BY '${userPassword}' WITH GRANT OPTION;
                 - userName: !GetAtt DBUserParameter.Value
                   userPassword: !GetAtt DBPasswordParameter.Value
               mode: "000400"
